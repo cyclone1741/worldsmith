@@ -4,11 +4,11 @@ import { rng } from '../rng.js';
 import { paint, mesh } from './common.js';
 
 // Organic forms from metaballs along a spine. No two seeds give the same silhouette.
-export function compileCreature(g, era, seed) {
+export function compileCreature(g, era, seed, opts = {}) {
   const r = rng(seed);
   const root = new THREE.Group();
-  const skin = paint(g.color || r.pick(era.creature.skin), r, { rough: 0.8 });
-  const res = 44;
+  const skin = opts.material || paint(g.color || r.pick(era.creature.skin), r, { rough: 0.8 });
+  const res = opts.res || 44;
   const mc = new MarchingCubes(res, skin, false, false, 80000);
   mc.isolation = 70;
   mc.reset();
@@ -63,16 +63,16 @@ export function compileCreature(g, era, seed) {
 
   // world-space helper: 0..1 box coords → scene
   const W = (x, y, z) => new THREE.Vector3((x * 2 - 1) * scale, (y * 2 - 1) * scale, (z * 2 - 1) * scale);
-  const accent = paint(g.accent || era.creature.accent, r, { rough: 0.7 });
+  const accent = opts.material || paint(g.accent || era.creature.accent, r, { rough: 0.7 });
   // horns / antlers: branching cones
   if (g.horns) for (const side of [-1, 1]) {
     const base = W(head[0] - 0.02, head[1] + 0.08, head[2] + side * 0.05);
-    const hornMat = paint('#D9C9A8', r, { rough: 0.8 });
+    const hornMat = opts.material || paint('#D9C9A8', r, { rough: 0.8 });
     const grow = (p, dir, len, rad, depth) => { const end = p.clone().addScaledVector(dir, len); const c = mesh(new THREE.CylinderGeometry(rad * 0.55, rad, len, 6), hornMat); c.position.copy(p).lerp(end, 0.5); c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize()); root.add(c); if (depth >= (g.antler ? 2 : 0)) return; for (let i = 0; i < 2; i++) { const d = dir.clone().applyAxisAngle(new THREE.Vector3(1, 0, 0), r.range(-0.7, 0.7)).applyAxisAngle(new THREE.Vector3(0, 0, 1), r.range(-0.6, 0.6)); d.y = Math.abs(d.y) + 0.2; grow(end, d.normalize(), len * 0.7, rad * 0.65, depth + 1); } };
     grow(base, new THREE.Vector3(-0.3, 1, side * 0.6).normalize(), (0.5 + g.size * 0.6) * (g.antler ? 1 : 0.6), 0.07 + g.size * 0.04, 0);
   }
   // eyes
-  for (const side of [-1, 1]) { const e = mesh(new THREE.SphereGeometry(0.09 * (1 + g.head * 0.5), 10, 8), paint('#1A1410', null, { rough: 0.3 }), { shadow: false }); e.position.copy(W(head[0] - 0.06, head[1] + 0.03, head[2] + side * 0.055)); root.add(e); }
+  for (const side of [-1, 1]) { const e = mesh(new THREE.SphereGeometry(0.09 * (1 + g.head * 0.5), 10, 8), opts.material || paint('#1A1410', null, { rough: 0.3 }), { shadow: false }); e.position.copy(W(head[0] - 0.06, head[1] + 0.03, head[2] + side * 0.055)); root.add(e); }
   // wings: thin fan shapes
   if (g.wings) for (const side of [-1, 1]) {
     const sp = spine[Math.round(0.4 * (n - 1))];
@@ -97,12 +97,12 @@ export function compileCreature(g, era, seed) {
   }
   if (g.dorsal) { const sp = spine[Math.round(0.45 * (n - 1))]; const d = mesh(new THREE.ConeGeometry(0.3, 1.1, 4), accent); d.scale.set(1, 1, 0.2); d.position.copy(W(sp[0], sp[1] + sp[3] * 1.3, sp[2])); d.rotation.z = -0.3; root.add(d); }
   // glow (twist: lantern village on the back)
-  if (g.glow) { const sp = spine[Math.round(0.5 * (n - 1))]; for (let i = -1; i <= 1; i++) { const l = mesh(new THREE.SphereGeometry(0.12, 8, 6), paint('#FFD08A', null, { emissive: '#FFB547', emissiveIntensity: 2.5 }), { shadow: false }); l.position.copy(W(sp[0] + i * 0.05, sp[1] + sp[3] * 1.2, sp[2])); root.add(l); } const pl = new THREE.PointLight(0xffb547, 5, 10, 1.8); pl.position.copy(W(sp[0], sp[1] + sp[3] * 1.5, sp[2])); root.add(pl); }
+  if (g.glow && !opts.material) { const sp = spine[Math.round(0.5 * (n - 1))]; for (let i = -1; i <= 1; i++) { const l = mesh(new THREE.SphereGeometry(0.12, 8, 6), paint('#FFD08A', null, { emissive: '#FFB547', emissiveIntensity: 2.5 }), { shadow: false }); l.position.copy(W(sp[0] + i * 0.05, sp[1] + 0.075 + g.bulk * 0.03, sp[2])); root.add(l); } const pl = new THREE.PointLight(0xffb547, 5, 10, 1.8); pl.position.copy(W(sp[0], sp[1] + 0.14, sp[2])); root.add(pl); }
   // pattern stripes: small accent bands as rings along the spine
 
   // ground the creature: lowest point to y=0 (flying ones hover)
   const box = new THREE.Box3().setFromObject(root);
   root.position.y = -box.min.y + (flying ? 1.2 + g.size : 0.02);
-  root.userData.height = box.max.y - box.min.y;
+  root.userData.height = box.max.y - box.min.y; root.userData.minY = box.min.y;
   return root;
 }

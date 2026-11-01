@@ -95,6 +95,7 @@ export function resolve(g, era, seed) {
 // ---------- amend: "말로 고치기" ----------
 // Returns {genome, note} when the text reads as a change to the current genome, else null.
 // No LLM: these are the "손길" edits (free). Unknown phrasing falls back to a fresh parse upstream.
+const ANIMAL = { '늑대': { body: 'quadruped', legs: 4, ears: true, snout: true, tail: 1.5, bulk: 0.4, head: 0.6 }, '독수리': { body: 'bird', legs: 2, wings: 1, head: 0.7, tail: 0.6 }, '사자': { body: 'quadruped', legs: 4, ears: true, snout: true, bulk: 0.6, head: 0.8 }, '호랑이': { body: 'quadruped', legs: 4, ears: true, snout: true, bulk: 0.6, head: 0.6, tail: 2 }, '용': { body: 'dragon', legs: 4, wings: 1, horns: true, tail: 2 }, '말': { body: 'quadruped', legs: 4, neck: 0.6, snout: true, tail: 1 }, '소': { body: 'quadruped', legs: 4, horns: true, bulk: 0.8 }, '곰': { body: 'quadruped', legs: 4, ears: true, bulk: 0.9, head: 0.5 }, '사슴': { body: 'quadruped', legs: 4, antler: true, horns: true, neck: 0.5 }, '새': { body: 'bird', legs: 2, wings: 1 }, '물고기': { body: 'fish', legs: 0 }, '고래': { body: 'whale', legs: 0 }, '뱀': { body: 'serpent', legs: 0 }, '여우': { body: 'quadruped', legs: 4, ears: true, snout: true, tail: 2, bulk: 0.3 }, '거북': { body: 'quadruped', legs: 4, bulk: 1, head: 0.3 }, '학': { body: 'bird', legs: 2, wings: 1, neck: 0.8 }, '까마귀': { body: 'bird', legs: 2, wings: 1 }, '라마': { body: 'quadruped', legs: 4, neck: 0.7, ears: true } };
 export function amend(g, text) {
   const t = text.trim();
   const o = structuredClone(g);
@@ -124,7 +125,11 @@ export function amend(g, text) {
     if (/십자/.test(t)) { o.footprint = 'cross'; notes.push('십자 평면'); }
     const add = (k, re, label) => { if (re.test(t)) { o.features[k] = !/빼|없애|치워|제거/.test(t); notes.push((o.features[k] ? '' : '제거: ') + label); } };
     add('towers', /탑을|망루|탑 (달|세|추가|빼)/, '탑'); add('banners', /깃발/, '깃발'); add('garden', /정원|옥상 정원/, '정원'); add('lantern', /등불|불 밝|빛나게/, '등불');
-    add('chimney', /굴뚝/, '굴뚝'); add('vines', /덩굴/, '덩굴'); add('nest', /둥지/, '둥지'); add('statue', /조각상|수호상|상을/, '조각상');
+    add('chimney', /굴뚝/, '굴뚝'); add('vines', /덩굴/, '덩굴'); add('nest', /둥지/, '둥지');
+    const om = t.match(/(늑대|독수리|사자|호랑이|용|말|소|곰|사슴|새|물고기|고래|뱀|여우|거북|학|까마귀|라마)\s*(조각|장식|상)/);
+    if (om) { o.ornaments = [...(o.ornaments || []), { motif: om[1] + ' ' + om[2], kind: 'statue', where: /기둥/.test(t) ? 'columns' : /지붕/.test(t) ? 'roof' : /입구|문/.test(t) ? 'entrance' : /벽/.test(t) ? 'walls' : 'corners', count: /마다|모든/.test(t) ? 6 : 2, creature: ANIMAL[om[1]] || {} }]; notes.push(om[1] + ' 조각'); }
+    else if (/문양|부조|새겨/.test(t)) { o.ornaments = [...(o.ornaments || []), { motif: '문양', kind: 'carving', where: /기둥/.test(t) ? 'columns' : 'walls', count: 4, color }]; notes.push('문양'); }
+    else if (/조각상|수호상|상을/.test(t)) { o.features.statue = true; notes.push('조각상'); }
   }
   if (o.kind === 'creature') {
     const m = t.match(/다리\s*(\d+)/); if (m) { o.legs = +m[1]; notes.push(`다리 ${m[1]}개`); }

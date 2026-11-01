@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { rng } from '../rng.js';
 import { paint, roughen, mesh, expand, centroid, prism } from './common.js';
+import { compileCreature } from './creature.js';
 
 // ---------- footprints: never a plain box unless the genome insists ----------
 function footprint(g, r) {
@@ -213,6 +214,54 @@ export function compileBuilding(g, era, seed) {
   if (g.features.banners && g.roof !== 'gable') for (let i = 0; i < 2; i++) { const p = poly[r.int(0, poly.length - 1)]; const pole = mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.6, 6), mats.trim); pole.position.set(p[0], y + 0.6, p[1]); root.add(pole); const fl = mesh(new THREE.BoxGeometry(0.02, 0.5, 0.7), paint(r.pick(era.palette.accent), r)); fl.position.set(p[0], y + 1.1, p[1] + 0.35); root.add(fl); }
   if (g.features.statue) { const s = mesh(new THREE.ConeGeometry(0.18, 0.9, 6), mats.trim); s.position.set(cx, y + rx * 0.5 + 0.45, cz); root.add(s); }
 
+  // free-form ornaments from the genome (LLM may name any motif)
+  for (const [oi, o] of (g.ornaments || []).slice(0, 4).entries()) root.add(ornament(o, { poly, basePoly: slender ? poly : basePoly, y, fh, cx, cz, rx }, mats, era, r, seed + oi * 977));
+
   root.userData.height = y + rx;
   return root;
+}
+
+// Where an ornament sits, as world positions with a facing angle.
+function spots(where, ctx, count, r) {
+  const { poly, basePoly, y, fh, cx, cz, rx } = ctx; const out = [];
+  const edgePts = (P, k, yy, inset = 0) => { for (let i = 0; i < P.length && out.length < k; i++) { const a = P[i], b = P[(i + 1) % P.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 1) continue; const nx = -(b[1] - a[1]) / L, nz = (b[0] - a[0]) / L; const t = 0.5; out.push({ x: a[0] + (b[0] - a[0]) * t - nx * inset, y: yy, z: a[1] + (b[1] - a[1]) * t - nz * inset, rot: Math.atan2(-nx, -nz) }); } };
+  switch (where) {
+    case 'roof': { out.push({ x: cx, y: y + rx * 0.35, z: cz, rot: 0 }); for (let i = 1; i < count; i++) { const a = i / count * Math.PI * 2; out.push({ x: cx + Math.cos(a) * rx * 0.5, y: y + rx * 0.2, z: cz + Math.sin(a) * rx * 0.5, rot: -a }); } break; }
+    case 'walls': edgePts(poly, count, y - fh * 0.5, 0.25); break;
+    case 'entrance': { const P = expand(basePoly, 1.3); let best = 0, bl = 0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > bl) { bl = L; best = i; } } const a = P[best], b = P[(best + 1) % P.length]; const nx = -(b[1] - a[1]) / bl, nz = (b[0] - a[0]) / bl; for (const t of [0.3, 0.7]) out.push({ x: a[0] + (b[0] - a[0]) * t, y: 0.22, z: a[1] + (b[1] - a[1]) * t, rot: Math.atan2(-nx, -nz) }); break; }
+    case 'columns': { const P = expand(basePoly, 0.9); for (let i = 0; i < P.length && out.length < count; i++) out.push({ x: P[i][0], y: fh + 0.4, z: P[i][1], rot: Math.atan2(P[i][0] - cx, P[i][1] - cz) }); break; }
+    default: { const P = expand(basePoly, 0.9); const corners = P.filter((p, i) => { const a = P[(i + P.length - 1) % P.length], b = P[(i + 1) % P.length]; return Math.abs((p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0])) > 0.3; }); for (const p of corners.slice(0, count)) out.push({ x: p[0], y: 0.22, z: p[1], rot: Math.atan2(p[0] - cx, p[1] - cz) }); }
+  }
+  return out.slice(0, count);
+}
+
+function ornament(o, ctx, mats, era, r, seed) {
+  const grp = new THREE.Group();
+  const count = Math.max(1, Math.min(8, o.count | 0 || 2));
+  const stone = paint(era.palette.trim, r, { rough: 0.95 });
+  const pts = spots(o.where || 'corners', ctx, count, r);
+  pts.forEach((p, i) => {
+    let m;
+    if (o.kind === 'statue' && o.creature) {
+      const cg = { size: 0.2, legs: 4, tail: 1, ears: true, snout: true, head: 0.6, bulk: 0.5, legLen: 0.5, neck: 0, ...o.creature, wings: o.creature.wings ? 1 : 0 };
+      m = compileCreature(cg, era, seed + i * 31, { material: stone, res: 28 });
+      const sc = 0.55 / Math.max(0.6, m.userData.height || 1); m.scale.setScalar(sc);
+      const ped = mesh(new THREE.BoxGeometry(0.5, 0.3, 0.5), mats.trim); ped.position.set(p.x, p.y + 0.15, p.z); grp.add(ped);
+      m.position.set(p.x, p.y + 0.3 - (m.userData.minY || 0) * sc, p.z); m.rotation.y = p.rot;
+    } else if (o.kind === 'lantern') {
+      m = mesh(new THREE.SphereGeometry(0.16, 8, 6), paint('#FFD08A', null, { emissive: '#FFB547', emissiveIntensity: 2 }), { shadow: false }); m.position.set(p.x, p.y + 0.5, p.z);
+      const pl = new THREE.PointLight(0xffb547, 3, 6, 1.8); pl.position.copy(m.position); grp.add(pl);
+    } else if (o.kind === 'banner') {
+      const pole = mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.6, 6), mats.trim); pole.position.set(p.x, p.y + 0.8, p.z); grp.add(pole);
+      m = mesh(new THREE.BoxGeometry(0.02, 0.5, 0.7), paint(o.color || r.pick(era.palette.accent), r)); m.position.set(p.x, p.y + 1.3, p.z + 0.35);
+    } else if (o.kind === 'plant') {
+      m = mesh(new THREE.IcosahedronGeometry(0.3, 0), paint(r.pick(era.tree.leaf), r)); m.position.set(p.x, p.y + 0.3, p.z);
+    } else if (o.kind === 'bell') {
+      m = mesh(new THREE.ConeGeometry(0.22, 0.4, 10), paint('#B08D57', r, { rough: 0.5 })); m.position.set(p.x, p.y + 0.5, p.z);
+    } else { // carving: a relief medallion in the accent color
+      m = mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.06, 12), paint(o.color || r.pick(era.palette.accent), r)); m.rotation.x = Math.PI / 2; m.position.set(p.x, p.y + 0.3 - (m.userData.minY || 0) * sc, p.z); m.rotation.y = p.rot;
+    }
+    grp.add(m);
+  });
+  return grp;
 }

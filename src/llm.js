@@ -3,7 +3,7 @@
 import { ERAS } from './eras.js';
 
 const SCHEMA = `
-building: {"kind":"building","name":string,"archetype":"house|tower|lighthouse|temple|palace|castle|market|barn|aqueduct|school|shrine","size":0~1,"floors":1~8,"footprint":"rect|L|T|cross|circle|polygon","roof":"hip|gable|dome|cone|tiered|flat|stepped","ornament":0~1,"age":0~1,"wallColor":hex?,"roofColor":hex?,"features":{"towers":bool,"banners":bool,"garden":bool,"lantern":bool,"chimney":bool,"vines":bool,"nest":bool,"statue":bool},"twist":string}
+building: {"kind":"building","name":string,"archetype":"house|tower|lighthouse|temple|palace|castle|market|barn|aqueduct|school|shrine","size":0~1,"floors":1~8,"footprint":"rect|L|T|cross|circle|polygon","roof":"hip|gable|dome|cone|tiered|flat|stepped","ornament":0~1,"age":0~1,"wallColor":hex?,"roofColor":hex?,"features":{"towers":bool,"banners":bool,"garden":bool,"lantern":bool,"chimney":bool,"vines":bool,"nest":bool,"statue":bool},"ornaments":[{"motif":string,"kind":"statue|carving|lantern|banner|plant|bell","where":"corners|columns|roof|entrance|walls","count":1~8,"color":hex?,"creature":{"body":"quadruped|bird|serpent|fish|dragon","legs":int,"wings":0|1,"horns":bool,"antler":bool,"ears":bool,"snout":bool,"tail":0~3,"bulk":0~1,"head":0~1,"neck":0~1}?}],"twist":string}
 creature: {"kind":"creature","name":string,"body":"quadruped|serpent|bird|fish|whale|dragon","size":0~1,"legs":0~8,"wings":0|1,"fins":0~3,"tail":0~3,"horns":bool,"antler":bool,"ears":bool,"snout":bool,"head":0~1,"bulk":0~1,"legLen":0~1,"neck":0~1,"dorsal":bool,"glow":bool,"ridge":bool,"color":hex?,"accent":hex?,"twist":string}
 tree: {"kind":"tree","name":string,"size":0~1,"depth":2~5,"spread":0~1,"shape":"round|pine|sparse","color":hex?,"blossom":hex?,"lantern":bool,"twist":string}`;
 
@@ -24,6 +24,7 @@ export function buildPrompt(text, eraKey, current) {
 5. 색은 팔레트에서 고르되, 창조주가 색을 말하면 그 색의 hex.
 6. 크기 단어(작은/큰/거대한)를 size에, 층수/다리 수 같은 숫자는 그대로 반영.
 7. "name": 세계가 붙인 이름(한국어, 2~6글자).
+8. "늑대 조각", "기둥마다 독수리", "벽에 문양", "입구에 등불" 같은 장식 요청은 ornaments 배열에 넣는다. 동물 조각은 kind:"statue"에 creature 체형을 함께 쓴다. 고칠 때 기존 ornaments는 유지하고 덧붙인다.
 ${current ? `
 지금 선택된 것(고칠 때는 이것을 바탕으로 전체 게놈을 다시 써서 돌려준다):
 ${JSON.stringify(current)}` : ''}
@@ -45,7 +46,9 @@ export function sanitize(j) {
     const f = j.features && typeof j.features === 'object' ? j.features : {};
     return { ...base, archetype: ONE(j.archetype, ['house', 'tower', 'lighthouse', 'temple', 'palace', 'castle', 'market', 'barn', 'aqueduct', 'school', 'shrine'], 'house'), size: NUM(j.size, 0, 1, 0.45), floors: Math.round(NUM(j.floors, 1, 8, 1)),
       footprint: ONE(j.footprint, ['rect', 'L', 'T', 'cross', 'circle', 'polygon'], undefined), roof: ONE(j.roof, ['hip', 'gable', 'dome', 'cone', 'tiered', 'flat', 'stepped'], undefined), ornament: NUM(j.ornament, 0, 1, 0.45), age: NUM(j.age, 0, 1, 0.1), wallColor: HEX(j.wallColor), roofColor: HEX(j.roofColor),
-      features: Object.fromEntries(['towers', 'banners', 'garden', 'lantern', 'chimney', 'vines', 'nest', 'statue'].map(k => [k, B(f[k])])) };
+      features: Object.fromEntries(['towers', 'banners', 'garden', 'lantern', 'chimney', 'vines', 'nest', 'statue'].map(k => [k, B(f[k])])),
+      ornaments: Array.isArray(j.ornaments) ? j.ornaments.slice(0, 4).map(o => o && typeof o === 'object' ? ({ motif: String(o.motif || '').slice(0, 30), kind: ONE(o.kind, ['statue', 'carving', 'lantern', 'banner', 'plant', 'bell'], 'carving'), where: ONE(o.where, ['corners', 'columns', 'roof', 'entrance', 'walls'], 'corners'), count: Math.round(NUM(o.count, 1, 8, 2)), color: HEX(o.color),
+        creature: o.creature && typeof o.creature === 'object' ? { body: ONE(o.creature.body, ['quadruped', 'bird', 'serpent', 'fish', 'dragon'], 'quadruped'), legs: Math.round(NUM(o.creature.legs, 0, 8, 4)), wings: B(o.creature.wings) || Number(o.creature.wings) === 1 ? 1 : 0, horns: B(o.creature.horns), antler: B(o.creature.antler), ears: B(o.creature.ears), snout: B(o.creature.snout), tail: NUM(o.creature.tail, 0, 3, 1), bulk: NUM(o.creature.bulk, 0, 1, 0.5), head: NUM(o.creature.head, 0, 1, 0.6), neck: NUM(o.creature.neck, 0, 1, 0) } : undefined }) : null).filter(Boolean) : [] };
   }
   if (kind === 'creature') return { ...base, body: ONE(j.body, ['quadruped', 'serpent', 'bird', 'fish', 'whale', 'dragon'], 'quadruped'), size: NUM(j.size, 0, 1, 0.45), legs: Math.round(NUM(j.legs, 0, 8, 4)), wings: B(j.wings) || Number(j.wings) === 1 ? 1 : 0, fins: Math.round(NUM(j.fins, 0, 3, 0)), tail: NUM(j.tail, 0, 3, 1), horns: B(j.horns), antler: B(j.antler), ears: B(j.ears), snout: B(j.snout), head: NUM(j.head, 0, 1, 0.5), bulk: NUM(j.bulk, 0, 1, 0.5), legLen: NUM(j.legLen, 0, 1, 0.5), neck: NUM(j.neck, 0, 1, 0), dorsal: B(j.dorsal), glow: B(j.glow), ridge: B(j.ridge), color: HEX(j.color), accent: HEX(j.accent) };
   return { ...base, size: NUM(j.size, 0, 1, 0.45), depth: Math.round(NUM(j.depth, 2, 5, 3)), spread: NUM(j.spread, 0, 1, 0.3), shape: ONE(j.shape, ['round', 'pine', 'sparse'], undefined), color: HEX(j.color), blossom: HEX(j.blossom), lantern: B(j.lantern) };
