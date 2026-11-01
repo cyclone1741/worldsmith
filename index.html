@@ -39,7 +39,8 @@ input[type=range]{width:100%;accent-color:var(--gold)}
 .sw button[aria-pressed=true]{border-color:var(--gold)}
 #bottom{position:fixed;left:0;right:0;bottom:0;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
 #bottom>*{pointer-events:auto}
-#ex{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+#ex,.edits{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.edits button{border-style:dashed!important}
 #ex button{font:inherit;font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:#E6E1D2;cursor:pointer}
 #ex button:hover{border-color:var(--gold)}
 form#f{width:100%;max-width:720px;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:10px;border-color:var(--gold);box-shadow:0 0 40px rgba(212,169,78,.18)}
@@ -85,13 +86,15 @@ form#f button:focus-visible,#ex button:focus-visible,#era button:focus-visible{o
 <div id="stat"></div>
 
 <div id="bottom">
+  <div id="log" class="panel" hidden style="padding:6px 12px;font-size:12px;color:var(--gold2)"></div>
   <div id="ex"></div>
+  <div id="ex" class="edits"><span style="font-size:11px;color:var(--muted);align-self:center">고치기 →</span><span id="ed" style="display:contents"></span></div>
   <form id="f" class="panel">
     <label for="q" hidden>말씀</label>
-    <input id="q" type="text" placeholder="무엇을 빚으시겠습니까 · 예: 강가에 둥근 등대" autocomplete="off">
+    <input id="q" type="text" placeholder="새로 빚거나(말씀) 고치거나(손길) · 예: 강가에 둥근 등대 / 지붕을 파랗게" autocomplete="off">
     <button type="submit">말하다</button>
   </form>
-  <div id="hint">드래그 회전 · 휠 확대 · 세 개는 같은 말에서 나온 형제. 라벨을 누르면 그 형태를 고른다.</div>
+  <div id="hint">새 대상을 말하면 새로 빚고(신성력 1), 고치는 말이면 지금 것을 바꾼다(0). 드래그 회전 · 휠 확대.</div>
 </div>
 
 <script type="importmap">
@@ -102,7 +105,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { ERAS } from './src/eras.js';
-import { parse, resolve } from './src/genome.js';
+import { parse, resolve, amend } from './src/genome.js';
 import { hashString } from './src/rng.js';
 import { compileBuilding } from './src/compile/building.js';
 import { compileCreature } from './src/compile/creature.js';
@@ -203,18 +206,29 @@ function renderTags() {
 }
 function updateTags() { for (const v of variants) { if (!v.tag) continue; const p = new THREE.Vector3(v.obj.position.x, v.h + 0.8, 0).project(camera); v.tag.style.left = ((p.x + 1) / 2 * innerWidth) + 'px'; v.tag.style.top = ((1 - p.y) / 2 * innerHeight) + 'px'; v.tag.style.display = p.z < 1 ? '' : 'none'; } }
 
+// A sentence is an edit when: something exists, it names no new subject, and amend() understood it.
+const NEW_SUBJECT = /등대|신전|사원|성|탑|집|궁전|시장|빵집|창고|학교|서당|나무|숲|고래|용|사슴|늑대|새|곰|호랑이|물고기|뱀|말|소|오두막|다리|수로|가게|주막|국수|술집|도서관|대학|절|성당|사당|망루|요새|벚|소나무|거북|코끼리|사자|여우|토끼|라마|학|까마귀|독수리|드래곤|생명체|짐승|괴물/;
 function speak(t) {
-  text = t; if (!t.trim()) return;
+  if (!t.trim()) return;
+  if (baseGenome && !NEW_SUBJECT.test(t)) {
+    const a = amend(applyOverrides(baseGenome), t);
+    if (a) { baseGenome = a.genome; overrides = { size: null, ornament: null, age: null, color: null, material: null }; syncDials(); $('log').textContent = '손길 · ' + a.note + ' · 신성력 0'; $('log').hidden = false; rebuild(); return; }
+  }
+  text = t;
+  $('log').textContent = '말씀 · 새로 빚음 · 신성력 1'; $('log').hidden = false;
   baseGenome = parse(t, eraKey);
   overrides = { size: null, ornament: null, age: null, color: null, material: null };
-  $('d-size').value = Math.round(baseGenome.size * 100); $('d-orn').value = Math.round((baseGenome.ornament ?? 0.45) * 100); $('d-age').value = Math.round((baseGenome.age ?? 0.1) * 100);
+  syncDials();
   seedBase = hashString(t) % 100000 + 1; picked = 1; fit = true;
   buildSwatches(); rebuild();
 }
 
+function syncDials() { $('d-size').value = Math.round((baseGenome.size ?? 0.45) * 100); $('d-orn').value = Math.round((baseGenome.ornament ?? 0.45) * 100); $('d-age').value = Math.round((baseGenome.age ?? 0.1) * 100); }
 // ---------- UI ----------
 const EX = ['강가에 둥근 등대', '언덕 위 큰 신전', '작은 빵집', '낡은 성', '하늘을 나는 고래', '뿔 달린 거대한 사슴', '큰 소나무', '벚나무', '3층 탑', '정원이 있는 궁전'];
 for (const e of EX) { const b = document.createElement('button'); b.type = 'button'; b.textContent = e; b.addEventListener('click', () => { $('q').value = e; speak(e); }); $('ex').appendChild(b); }
+const EDITS = ['더 크게', '지붕을 빨갛게', '한 층 더', '둥근 지붕으로', '깃발 달아', '낡게', '더 화려하게', '등불 켜', '날개 달아', '다리 길게', '꽃 피워'];
+for (const e of EDITS) { const b = document.createElement('button'); b.type = 'button'; b.textContent = e; b.addEventListener('click', () => { $('q').value = e; speak(e); }); $('ed').appendChild(b); }
 for (const k of Object.keys(ERAS)) { const b = document.createElement('button'); b.type = 'button'; b.textContent = ERAS[k].name; b.setAttribute('aria-pressed', k === eraKey); b.addEventListener('click', () => { eraKey = k; document.querySelectorAll('#era button').forEach(x => x.setAttribute('aria-pressed', x === b)); if (text) speak(text); }); $('era').appendChild(b); }
 $('f').addEventListener('submit', e => { e.preventDefault(); speak($('q').value); });
 const lv = (v, a, b, c) => v < 33 ? a : v < 66 ? b : c;

@@ -12,6 +12,6 @@
 ## 실행
 ```
 npm i
-node tools/shot.js out.png "하늘을 나는 고래" "낡은 성"   # 헤드리스 렌더 스크린샷
+node tools/shot.cjs out.png "하늘을 나는 고래" "낡은 성"   # 헤드리스 렌더 스크린샷
 ```
 브라우저에서는 `index.html`을 정적 서버로 열면 된다(importmap이 jsdelivr의 three 0.170을 쓴다).

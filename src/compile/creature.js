@@ -99,7 +99,6 @@ export function compileCreature(g, era, seed) {
   // glow (twist: lantern village on the back)
   if (g.glow) { const sp = spine[Math.round(0.5 * (n - 1))]; for (let i = -1; i <= 1; i++) { const l = mesh(new THREE.SphereGeometry(0.12, 8, 6), paint('#FFD08A', null, { emissive: '#FFB547', emissiveIntensity: 2.5 }), { shadow: false }); l.position.copy(W(sp[0] + i * 0.05, sp[1] + sp[3] * 1.2, sp[2])); root.add(l); } const pl = new THREE.PointLight(0xffb547, 5, 10, 1.8); pl.position.copy(W(sp[0], sp[1] + sp[3] * 1.5, sp[2])); root.add(pl); }
   // pattern stripes: small accent bands as rings along the spine
-  if (g.pattern === 'stripes') for (let i = 2; i < n - 2; i += 2) { const sp = spine[i]; for (const side of [-1, 0, 1]) { const spot = mesh(new THREE.SphereGeometry(0.16 + g.size * 0.08, 7, 5), accent, { shadow: false }); spot.scale.set(0.5, 1, 1.2); spot.position.copy(W(sp[0], sp[1] + sp[3] * (side ? 0.55 : 1.05), sp[2] + side * sp[3] * 0.95)); root.add(spot); } }
 
   // ground the creature: lowest point to y=0 (flying ones hover)
   const box = new THREE.Box3().setFromObject(root);

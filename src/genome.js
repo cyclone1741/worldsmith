@@ -3,8 +3,8 @@ import { rng, hashString } from './rng.js';
 // Local stand-in for the LLM: text → genome. The real server returns the same JSON shape.
 // Keep the schema small on purpose; everything visual is derived by the compilers.
 const COLORS = [
-  [/빨간|붉은|적색/, '#B9573C'], [/파란|푸른|청색/, '#2F6F8F'], [/노란|황금|금빛|금색/, '#D4A94E'], [/하얀|흰|백색/, '#EDEAE2'],
-  [/검은|검정|흑/, '#2A2A30'], [/초록|녹색|풀색/, '#4F7A3A'], [/보라|자주/, '#6B4A7A'], [/분홍|벚꽃/, '#E8A8B8'], [/회색|잿빛/, '#8E8A80'], [/갈색|밤색/, '#6B4A2E'],
+  [/빨간|빨갛|붉은|붉게|적색|빨개/, '#B9573C'], [/파란|파랗|푸른|푸르게|청색|파래/, '#2F6F8F'], [/노란|노랗|황금|금빛|금색|노래/, '#D4A94E'], [/하얀|하얗|흰|백색|하얘/, '#EDEAE2'],
+  [/검은|검게|검정|까만|까맣|흑/, '#2A2A30'], [/초록|녹색|풀색|푸릇/, '#4F7A3A'], [/보라|자주/, '#6B4A7A'], [/분홍|벚꽃|핑크/, '#E8A8B8'], [/회색|잿빛/, '#8E8A80'], [/갈색|밤색/, '#6B4A2E'],
 ];
 const TWISTS_B = [
   ['꼭대기에 새 둥지가 있다', { nest: true }], ['벽을 덩굴이 타고 오른다', { vines: true }], ['밤이면 등불이 켜진다', { lantern: true }],
@@ -90,4 +90,60 @@ export function resolve(g, era, seed) {
     out.flare = (r.next() - 0.5) * 0.04;
   }
   return out;
+}
+
+// ---------- amend: "말로 고치기" ----------
+// Returns {genome, note} when the text reads as a change to the current genome, else null.
+// No LLM: these are the "손길" edits (free). Unknown phrasing falls back to a fresh parse upstream.
+export function amend(g, text) {
+  const t = text.trim();
+  const o = structuredClone(g);
+  const notes = [];
+  const clamp = (v) => Math.min(1, Math.max(0, v));
+  const sz = (d) => { o.size = clamp((o.size ?? 0.45) + d); notes.push(d > 0 ? '더 크게' : '더 작게'); };
+  if (/훨씬 (더 )?크게|거대하게|아주 크게/.test(t)) sz(0.4); else if (/더 크게|크게|키워/.test(t)) sz(0.2);
+  if (/훨씬 (더 )?작게|아주 작게/.test(t)) sz(-0.4); else if (/더 작게|작게|줄여/.test(t)) sz(-0.2);
+  const color = (COLORS.find(([re]) => re.test(t)) || [])[1];
+  if (color) { if (/지붕/.test(t) && o.kind === 'building') o.roofColor = color; else if (o.kind === 'building') o.wallColor = color; else o.color = color; notes.push('색 바꿈'); }
+  if (/화려|장식 (더|많이)|꾸며/.test(t)) { o.ornament = clamp((o.ornament ?? 0.45) + 0.3); notes.push('더 화려하게'); }
+  if (/소박|단순|장식 (빼|없)/.test(t)) { o.ornament = clamp((o.ornament ?? 0.45) - 0.3); notes.push('더 소박하게'); }
+  if (/낡게|오래된|이끼|세월/.test(t)) { o.age = clamp((o.age ?? 0.1) + 0.5); notes.push('세월을 입힘'); }
+  if (/새것|깨끗|새로/.test(t)) { o.age = 0.05; notes.push('새것처럼'); }
+  if (o.kind === 'building') {
+    o.features ||= {};
+    const m = t.match(/(\d+)\s*층/); if (m) { o.floors = +m[1]; notes.push(`${m[1]}층`); }
+    else if (/층 (더|올려|추가)|한 층|높게|높여/.test(t)) { o.floors = (o.floors ?? 1) + 1; notes.push('한 층 더'); }
+    else if (/층 (빼|낮춰)|낮게|낮춰/.test(t)) { o.floors = Math.max(1, (o.floors ?? 1) - 1); notes.push('한 층 낮게'); }
+    if (/돔|둥근 지붕/.test(t)) { o.roof = 'dome'; notes.push('돔 지붕'); }
+    if (/뾰족|첨탑|원뿔/.test(t)) { o.roof = 'cone'; notes.push('뾰족 지붕'); }
+    if (/평평|옥상|평지붕/.test(t)) { o.roof = 'flat'; notes.push('평지붕'); }
+    if (/박공|맞배/.test(t)) { o.roof = 'gable'; notes.push('박공 지붕'); }
+    if (/겹처마|층층|탑처럼|기와 겹/.test(t)) { o.roof = 'tiered'; notes.push('겹처마'); }
+    if (/둥글게|원형으로|둥근 (집|건물|평면)/.test(t) && !/지붕/.test(t)) { o.footprint = 'circle'; notes.push('둥근 평면'); }
+    if (/ㄱ자|기역|L자/.test(t)) { o.footprint = 'L'; notes.push('ㄱ자 평면'); }
+    if (/십자/.test(t)) { o.footprint = 'cross'; notes.push('십자 평면'); }
+    const add = (k, re, label) => { if (re.test(t)) { o.features[k] = !/빼|없애|치워|제거/.test(t); notes.push((o.features[k] ? '' : '제거: ') + label); } };
+    add('towers', /탑을|망루|탑 (달|세|추가|빼)/, '탑'); add('banners', /깃발/, '깃발'); add('garden', /정원|옥상 정원/, '정원'); add('lantern', /등불|불 밝|빛나게/, '등불');
+    add('chimney', /굴뚝/, '굴뚝'); add('vines', /덩굴/, '덩굴'); add('nest', /둥지/, '둥지'); add('statue', /조각상|수호상|상을/, '조각상');
+  }
+  if (o.kind === 'creature') {
+    const m = t.match(/다리\s*(\d+)/); if (m) { o.legs = +m[1]; notes.push(`다리 ${m[1]}개`); }
+    if (/날개/.test(t)) { o.wings = /빼|없애/.test(t) ? 0 : 1; notes.push(o.wings ? '날개' : '날개 제거'); }
+    if (/뿔/.test(t)) { o.horns = !/빼|없애/.test(t); notes.push(o.horns ? '뿔' : '뿔 제거'); }
+    if (/빛나|등불|발광/.test(t)) { o.glow = true; notes.push('빛남'); }
+    if (/줄무늬|무늬/.test(t)) { o.pattern = 'stripes'; notes.push('줄무늬'); }
+    if (/뚱뚱|통통|살찌/.test(t)) { o.bulk = clamp((o.bulk ?? 0.5) + 0.3); notes.push('더 통통하게'); }
+    if (/날씬|마른|홀쭉/.test(t)) { o.bulk = clamp((o.bulk ?? 0.5) - 0.3); notes.push('더 날씬하게'); }
+    if (/다리 (길|늘)/.test(t)) { o.legLen = clamp((o.legLen ?? 0.5) + 0.3); notes.push('다리 길게'); }
+    if (/목 (길|늘)/.test(t)) { o.neck = clamp((o.neck ?? 0) + 0.5); notes.push('목 길게'); }
+    if (/꼬리 (길|늘)/.test(t)) { o.tail = (o.tail ?? 1) + 1; notes.push('꼬리 길게'); }
+  }
+  if (o.kind === 'tree') {
+    if (/우거지|무성|가지 (더|많이)/.test(t)) { o.depth = Math.min(5, (o.depth ?? 3) + 1); o.spread = clamp((o.spread ?? 0.3) + 0.3); notes.push('더 무성하게'); }
+    if (/꽃/.test(t)) { o.blossom = color || '#E8A8B8'; notes.push('꽃'); }
+    if (/등불/.test(t)) { o.lantern = true; notes.push('등불'); }
+    if (/소나무|침엽/.test(t)) { o.shape = 'pine'; notes.push('침엽수로'); }
+  }
+  if (!notes.length) return null;
+  return { genome: o, note: notes.join(' · ') };
 }
