@@ -99,6 +99,7 @@ form#f button:focus-visible,#ex button:focus-visible,#era button:focus-visible{o
   <div id="hint">새 대상을 말하면 새로 빚고(신성력 1), 고치는 말이면 지금 것을 바꾼다(0). 드래그 회전 · 휠 확대.</div>
 </div>
 
+<script src="./config.js"></script>
 <script type="importmap">
 {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
 </script>
@@ -109,7 +110,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { ERAS } from './src/eras.js';
 import { parse, resolve, amend } from './src/genome.js';
 import { hashString } from './src/rng.js';
-import { askWorld } from './src/llm.js';
+import { askWorld, hasApi } from './src/llm.js';
 import { compileBuilding } from './src/compile/building.js';
 import { compileCreature } from './src/compile/creature.js';
 import { compileTree } from './src/compile/tree.js';
@@ -211,8 +212,8 @@ function updateTags() { for (const v of variants) { if (!v.tag) continue; const 
 
 // Brain: Claude via the page's `sample` capability when the viewer allows it; local parser otherwise.
 let sample = null, brain = 'local', busy = false, llmCalls = 0;
-(async () => { try { sample = await window.claude?.use?.('sample'); } catch { sample = null; } brain = sample ? 'claude' : 'local'; paintBrain(); })();
-function paintBrain(msg) { const el = $('brain'); el.textContent = msg || (brain === 'claude' ? '세계의 뇌: Claude (첫 말에 허용 요청)' : '세계의 뇌: 로컬 규칙 (Claude 미연결)'); el.dataset.state = brain; }
+(async () => { try { sample = window.claude?.use ? await window.claude.use('sample') : null; } catch { sample = null; } brain = sample ? 'claude' : hasApi() ? 'api' : 'local'; paintBrain(); })();
+function paintBrain(msg) { const el = $('brain'); el.textContent = msg || ({ claude: '세계의 뇌: Claude (첫 말에 허용 요청)', api: '세계의 뇌: Claude (서버)', local: '세계의 뇌: 로컬 규칙 (Claude 미연결)' })[brain]; el.dataset.state = brain === 'local' ? 'local' : 'claude'; }
 const NEW_SUBJECT = /등대|신전|사원|성|탑|집|궁전|시장|빵집|창고|학교|서당|나무|숲|고래|용|사슴|늑대|새|곰|호랑이|물고기|뱀|말|소|오두막|다리|수로|가게|주막|국수|술집|도서관|대학|절|성당|사당|망루|요새|벚|소나무|거북|코끼리|사자|여우|토끼|라마|학|까마귀|독수리|드래곤|생명체|짐승|괴물/;
 function localBrain(t) {
   if (baseGenome && (!NEW_SUBJECT.test(t) || /조각|장식|문양|새겨|달아|추가|붙여/.test(t))) { const a = amend(applyOverrides(baseGenome), t); if (a) return { ...a.genome, mode: 'edit', note: a.note }; }

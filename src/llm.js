@@ -69,5 +69,19 @@ export async function askWorld(sample, text, eraKey, current, onStatus, fallback
       if (e?.code === 'not_granted' || e?.code === 'sampling_disabled') return { genome: fallback(), source: 'local', dead: true };
     }
   }
+  if (API_URL) {
+    try {
+      onStatus?.('세계가 읽는 중…');
+      const r = await fetch(API_URL, { method: 'POST', headers: { 'content-type': 'application/json', ...(API_KEY ? { apikey: API_KEY, authorization: 'Bearer ' + API_KEY } : {}) }, body: JSON.stringify({ prompt: buildPrompt(text, eraKey, current) }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.genome) { const g = sanitize(j.genome); if (g) return { genome: g, source: 'claude' }; }
+      onStatus?.({ rate_limited: '잠시 너무 많은 말 · 로컬 해석으로', no_key: '서버에 API 키가 없음 · 로컬 해석으로', invalid_json: '세계의 답이 깨져 로컬 해석으로' }[j.error] || `서버 오류(${j.error || r.status}) · 로컬 해석으로`);
+    } catch (e) { onStatus?.('서버에 닿지 않음 · 로컬 해석으로'); }
+  }
   return { genome: fallback(), source: 'local' };
 }
+
+// Website deployment: set by config.js (window.WORLDSMITH_API = {url, key}). Absent inside the artifact.
+const API_URL = globalThis.WORLDSMITH_API?.url || '';
+const API_KEY = globalThis.WORLDSMITH_API?.key || '';
+export const hasApi = () => !!API_URL;
